@@ -13,6 +13,10 @@ to pull. It starts in milliseconds.
 Run your test suite with SimpleCov enabled, then add the gate:
 
 ```yaml
+permissions:
+  contents: read
+  checks: write # lets the action publish its "SimpleCov Gate" check run
+
 steps:
   - uses: actions/checkout@v4
 
@@ -26,7 +30,13 @@ steps:
 ```
 
 The action reports the covered percentage and the minimum in the job log and
-in the step summary, and emits an `::error` annotation when the gate fails.
+in the step summary, emits an `::error` annotation when the gate fails, and
+publishes the verdict as a dedicated **SimpleCov Gate** check run listed
+alongside your other checks on the pull request.
+
+The check run needs the `checks: write` permission shown above; without it
+the action prints a warning and the gate still passes or fails normally.
+Set `github-token: ""` to disable the check run entirely.
 
 ## Inputs
 
@@ -34,6 +44,7 @@ in the step summary, and emits an `::error` annotation when the gate fails.
 | ------------------ | -------- | ---------- | ------------------------------------------------------------------ |
 | `minimum-coverage` | yes      | —          | Minimum required total line coverage, in percent (e.g. 90 or 99.5) |
 | `coverage-path`    | no       | `coverage` | Directory containing the SimpleCov report                          |
+| `github-token`     | no       | `github.token` | Token used to publish the check run; empty string disables it  |
 
 ## How it works
 

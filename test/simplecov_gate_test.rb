@@ -159,6 +159,95 @@ class SimplecovGateTest < Minitest::Test
     assert_includes summary, ":x: No SimpleCov report"
   end
 
+  def test_publishes_a_dedicated_check_run_with_the_verdict
+    check_run = RecordingCheckRun.new
+    run_gate(files: { "coverage.json" => coverage_json(100) }, minimum: "90", check_run: check_run)
+
+    assert_equal [{ conclusion: "success", title: "Line coverage 100.00% meets the minimum 90.00%" }],
+                 check_run.published
+  end
+
+  def test_publishes_a_failing_check_run_below_the_minimum
+    check_run = RecordingCheckRun.new
+    run_gate(files: { "coverage.json" => coverage_json(50) }, minimum: "90", check_run: check_run)
+
+    assert_equal [{ conclusion: "failure", title: "Line coverage 50.00% is below the minimum 90.00%" }],
+                 check_run.published
+  end
+
+  def test_publishes_a_failing_check_run_on_errors
+    check_run = RecordingCheckRun.new
+    run_gate(minimum: "90", check_run: check_run)
+
+    assert_equal 1, check_run.published.size
+    assert_equal "failure", check_run.published.first[:conclusion]
+    assert_includes check_run.published.first[:title], "No SimpleCov report"
+  end
+
+  def test_check_run_posts_the_verdict_to_github
+    requests = []
+    stdout = StringIO.new
+    check_run = github_check_run(stdout: stdout, transport: lambda { |uri, body, headers|
+      requests << [uri.to_s, JSON.parse(body), headers]
+      FakeResponse.new("201")
+    })
+
+    check_run.publish(conclusion: "success", title: "all good")
+
+    uri, body, headers = requests.fetch(0)
+    assert_equal "https://api.github.com/repos/acme/widgets/check-runs", uri
+    assert_equal "SimpleCov Gate", body["name"]
+    assert_equal "deadbeef", body["head_sha"]
+    assert_equal "completed", body["status"]
+    assert_equal "success", body["conclusion"]
+    assert_equal "all good", body.dig("output", "title")
+    assert_equal "Bearer s3cret", headers["Authorization"]
+    assert_empty stdout.string
+  end
+
+  def test_check_run_prefers_the_pull_request_head_sha
+    Dir.mktmpdir do |dir|
+      event_path = File.join(dir, "event.json")
+      File.write(event_path, %({"pull_request":{"head":{"sha":"cafe"}}}))
+      requests = []
+      check_run = github_check_run(env: { "GITHUB_EVENT_PATH" => event_path },
+                                   transport: ->(_uri, body, _headers) { requests << JSON.parse(body); FakeResponse.new("201") })
+
+      check_run.publish(conclusion: "success", title: "all good")
+
+      assert_equal "cafe", requests.fetch(0).fetch("head_sha")
+    end
+  end
+
+  def test_check_run_warns_when_github_declines
+    stdout = StringIO.new
+    check_run = github_check_run(stdout: stdout, transport: ->(*) { FakeResponse.new("403") })
+
+    check_run.publish(conclusion: "success", title: "all good")
+
+    assert_includes stdout.string, "::warning::Could not create the 'SimpleCov Gate' check run"
+    assert_includes stdout.string, "checks: write"
+  end
+
+  def test_check_run_warns_instead_of_raising
+    stdout = StringIO.new
+    check_run = github_check_run(stdout: stdout, transport: ->(*) { raise "connection reset" })
+
+    check_run.publish(conclusion: "success", title: "all good")
+
+    assert_includes stdout.string, "connection reset"
+  end
+
+  def test_check_run_skips_quietly_without_a_token
+    stdout = StringIO.new
+    check_run = SimplecovGate::CheckRun.new(env: {}, stdout: stdout,
+                                            transport: ->(*) { flunk "must not call GitHub" })
+
+    check_run.publish(conclusion: "success", title: "all good")
+
+    assert_empty stdout.string
+  end
+
   def test_the_executable_wires_the_verdict_to_the_exit_status
     Dir.mktmpdir do |dir|
       File.write(File.join(dir, "coverage.json"), coverage_json(97.5))
@@ -174,6 +263,29 @@ class SimplecovGateTest < Minitest::Test
   end
 
   private
+
+  FakeResponse = Struct.new(:code)
+
+  class RecordingCheckRun
+    attr_reader :published
+
+    def initialize
+      @published = []
+    end
+
+    def publish(**verdict)
+      published << verdict
+    end
+  end
+
+  def github_check_run(transport:, stdout: StringIO.new, env: {})
+    full_env = {
+      "SIMPLECOV_GATE_GITHUB_TOKEN" => "s3cret",
+      "GITHUB_REPOSITORY" => "acme/widgets",
+      "GITHUB_SHA" => "deadbeef"
+    }.merge(env)
+    SimplecovGate::CheckRun.new(env: full_env, stdout: stdout, transport: transport)
+  end
 
   EXECUTABLE = File.expand_path("../bin/simplecov-gate", __dir__)
 
@@ -192,7 +304,7 @@ class SimplecovGateTest < Minitest::Test
 
   # Runs the CLI against a temporary coverage directory holding +files+,
   # returning the exit status and everything written to stdout.
-  def run_gate(minimum:, files: {}, env: {})
+  def run_gate(minimum:, files: {}, env: {}, check_run: nil)
     Dir.mktmpdir do |dir|
       files.each { |name, content| File.write(File.join(dir, name), content) }
       stdout = StringIO.new
@@ -200,8 +312,10 @@ class SimplecovGateTest < Minitest::Test
         "SIMPLECOV_GATE_MINIMUM_COVERAGE" => minimum,
         "SIMPLECOV_GATE_COVERAGE_PATH" => dir
       }.merge(env)
+      options = { env: full_env, stdout: stdout }
+      options[:check_run] = check_run if check_run
 
-      status = SimplecovGate::CLI.run(env: full_env, stdout: stdout)
+      status = SimplecovGate::CLI.run(**options)
       [status, stdout.string]
     end
   end

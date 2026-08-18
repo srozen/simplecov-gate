@@ -14,6 +14,13 @@ inputs:
     description: Directory containing the SimpleCov report (coverage.json or .last_run.json).
     required: false
     default: coverage
+  github-token:
+    description: >
+      Token used to publish the verdict as a dedicated "SimpleCov Gate" check
+      run on the pull request (requires `checks: write` permission).
+      Set to an empty string to disable the check run.
+    required: false
+    default: ${{ github.token }}
 
 runs:
   using: composite
@@ -23,4 +30,5 @@ runs:
       env:
         SIMPLECOV_GATE_MINIMUM_COVERAGE: ${{ inputs.minimum-coverage }}
         SIMPLECOV_GATE_COVERAGE_PATH: ${{ inputs.coverage-path }}
+        SIMPLECOV_GATE_GITHUB_TOKEN: ${{ inputs.github-token }}
       run: ruby "${GITHUB_ACTION_PATH}/bin/simplecov-gate"
