@@ -23,13 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The runner image ships Ruby and RubyGems but no Bundler, so
+      # install the two dev gems directly.
       - name: Install dependencies
-        run: |
-          bundle config set --local path vendor/bundle
-          bundle install
+        run: sudo gem install minitest simplecov:"${SIMPLECOV_VERSION}"
 
       - name: Run tests
-        run: bundle exec ruby test/simplecov_gate_test.rb
+        run: ruby test/simplecov_gate_test.rb
 
       - name: Gate coverage at 100%
         uses: ./
