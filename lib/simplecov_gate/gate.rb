@@ -1,16 +1,17 @@
 # frozen_string_literal: true
 
 module SimplecovGate
-  # Facade tying the pieces together: reads the SimpleCov report and
-  # compares its total line coverage against the minimum.
+  # Facade tying the pieces together: reads the SimpleCov report once and
+  # compares each criterion's coverage against its minimum.
   class Gate
-    def initialize(minimum:, coverage_path:)
-      @minimum = minimum
+    def initialize(minimums:, coverage_path:)
+      @minimums = minimums
       @coverage_path = coverage_path
     end
 
     def check
-      Result.new(Report.new(@coverage_path).percent, @minimum)
+      report = Report.new(@coverage_path)
+      Verdict.new(@minimums.map { |criterion, minimum| Result.new(criterion, report.percent(criterion), minimum) })
     end
   end
 end

@@ -30,7 +30,7 @@ jobs:
         run: sudo gem install minitest simplecov:"${SIMPLECOV_VERSION}"
 
       - name: Run tests
-        run: ruby test/simplecov_gate_test.rb
+        run: ruby test/all.rb
 
       - name: Gate coverage at 100%
         uses: ./

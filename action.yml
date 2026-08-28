@@ -1,5 +1,5 @@
 name: SimpleCov Gate
-description: Fail the build when SimpleCov total line coverage drops below a minimum threshold.
+description: Fail the build when SimpleCov coverage drops below a minimum threshold.
 author: Samuel Monroe
 
 branding:
@@ -8,8 +8,20 @@ branding:
 
 inputs:
   minimum-coverage:
-    description: Minimum required total line coverage, in percent (e.g. 90 or 99.5).
-    required: true
+    description: >
+      Minimum required total line coverage, in percent (e.g. 90 or 99.5).
+      Set at least one of the three coverage minimums.
+    required: false
+  minimum-branch-coverage:
+    description: >
+      Minimum required total branch coverage, in percent. Requires
+      `enable_coverage :branch` in your SimpleCov configuration.
+    required: false
+  minimum-method-coverage:
+    description: >
+      Minimum required total method coverage, in percent. Requires
+      `enable_coverage :method` in your SimpleCov configuration.
+    required: false
   coverage-path:
     description: Directory containing the SimpleCov report (coverage.json or .last_run.json).
     required: false
@@ -29,6 +41,8 @@ runs:
       shell: bash
       env:
         SIMPLECOV_GATE_MINIMUM_COVERAGE: ${{ inputs.minimum-coverage }}
+        SIMPLECOV_GATE_MINIMUM_BRANCH_COVERAGE: ${{ inputs.minimum-branch-coverage }}
+        SIMPLECOV_GATE_MINIMUM_METHOD_COVERAGE: ${{ inputs.minimum-method-coverage }}
         SIMPLECOV_GATE_COVERAGE_PATH: ${{ inputs.coverage-path }}
         SIMPLECOV_GATE_GITHUB_TOKEN: ${{ inputs.github-token }}
       run: ruby "${GITHUB_ACTION_PATH}/bin/simplecov-gate"

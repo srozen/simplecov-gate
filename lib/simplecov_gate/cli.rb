@@ -4,7 +4,6 @@ module SimplecovGate
   # Adapts the GitHub Actions environment to the Gate: reads the action's
   # inputs from ENV, reports the verdict and turns it into an exit status.
   class CLI
-    MINIMUM_COVERAGE = "SIMPLECOV_GATE_MINIMUM_COVERAGE"
     COVERAGE_PATH = "SIMPLECOV_GATE_COVERAGE_PATH"
     STEP_SUMMARY = "GITHUB_STEP_SUMMARY"
     DEFAULT_COVERAGE_PATH = "coverage"
@@ -20,9 +19,9 @@ module SimplecovGate
     end
 
     def call
-      result = Gate.new(minimum: minimum, coverage_path: coverage_path).check
-      reporter.verdict(result)
-      result.passed? ? 0 : 1
+      verdict = Gate.new(minimums: minimums, coverage_path: coverage_path).check
+      reporter.verdict(verdict)
+      verdict.passed? ? 0 : 1
     rescue Error => e
       reporter.failure(e.message)
       1
@@ -30,14 +29,25 @@ module SimplecovGate
 
     private
 
-    def minimum
-      raw = @env[MINIMUM_COVERAGE].to_s
+    # Every criterion is opt-in, mirroring SimpleCov, where each
+    # threshold is configured on its own and disabled by default.
+    def minimums
+      minimums = Criterion::ALL.filter_map { |criterion| minimum_for(criterion) }
+      raise Error, "Set at least one coverage minimum: #{Criterion::ALL.map(&:input).join(', ')}." if minimums.empty?
+
+      minimums
+    end
+
+    def minimum_for(criterion)
+      raw = @env[criterion.env].to_s
+      return nil if raw.strip.empty?
+
       minimum = Float(raw, exception: false)
       unless minimum&.between?(0, 100)
-        raise Error, "minimum-coverage must be a number between 0 and 100, got '#{raw}'"
+        raise Error, "#{criterion.input} must be a number between 0 and 100, got '#{raw}'"
       end
 
-      minimum
+      [criterion, minimum]
     end
 
     def coverage_path
